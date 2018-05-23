@@ -80,6 +80,13 @@ function WebVRManager( renderer ) {
 
 	this.enabled = false;
 	this.userHeight = 1.6;
+	this.autoSubmitFrame = true;
+
+	this.setScaling = function ( value ) {
+
+		renderScaling = value;
+
+	}
 
 	this.setScaling = function ( value ) {
 
