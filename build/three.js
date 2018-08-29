@@ -185,7 +185,7 @@
 
 	} );
 
-	var REVISION = '92';
+	var REVISION = '93dev';
 	var MOUSE = { LEFT: 0, MIDDLE: 1, RIGHT: 2 };
 	var CullFaceNone = 0;
 	var CullFaceBack = 1;
@@ -5920,7 +5920,7 @@
 
 	var bsdfs = "float punctualLightIntensityToIrradianceFactor( const in float lightDistance, const in float cutoffDistance, const in float decayExponent ) {\n\tif( decayExponent > 0.0 ) {\n#if defined ( PHYSICALLY_CORRECT_LIGHTS )\n\t\tfloat distanceFalloff = 1.0 / max( pow( lightDistance, decayExponent ), 0.01 );\n\t\tfloat maxDistanceCutoffFactor = pow2( saturate( 1.0 - pow4( lightDistance / cutoffDistance ) ) );\n\t\treturn distanceFalloff * maxDistanceCutoffFactor;\n#else\n\t\treturn pow( saturate( -lightDistance / cutoffDistance + 1.0 ), decayExponent );\n#endif\n\t}\n\treturn 1.0;\n}\nvec3 BRDF_Diffuse_Lambert( const in vec3 diffuseColor ) {\n\treturn RECIPROCAL_PI * diffuseColor;\n}\nvec3 F_Schlick( const in vec3 specularColor, const in float dotLH ) {\n\tfloat fresnel = exp2( ( -5.55473 * dotLH - 6.98316 ) * dotLH );\n\treturn ( 1.0 - specularColor ) * fresnel + specularColor;\n}\nfloat G_GGX_Smith( const in float alpha, const in float dotNL, const in float dotNV ) {\n\tfloat a2 = pow2( alpha );\n\tfloat gl = dotNL + sqrt( a2 + ( 1.0 - a2 ) * pow2( dotNL ) );\n\tfloat gv = dotNV + sqrt( a2 + ( 1.0 - a2 ) * pow2( dotNV ) );\n\treturn 1.0 / ( gl * gv );\n}\nfloat G_GGX_SmithCorrelated( const in float alpha, const in float dotNL, const in float dotNV ) {\n\tfloat a2 = pow2( alpha );\n\tfloat gv = dotNL * sqrt( a2 + ( 1.0 - a2 ) * pow2( dotNV ) );\n\tfloat gl = dotNV * sqrt( a2 + ( 1.0 - a2 ) * pow2( dotNL ) );\n\treturn 0.5 / max( gv + gl, EPSILON );\n}\nfloat D_GGX( const in float alpha, const in float dotNH ) {\n\tfloat a2 = pow2( alpha );\n\tfloat denom = pow2( dotNH ) * ( a2 - 1.0 ) + 1.0;\n\treturn RECIPROCAL_PI * a2 / pow2( denom );\n}\nvec3 BRDF_Specular_GGX( const in IncidentLight incidentLight, const in GeometricContext geometry, const in vec3 specularColor, const in float roughness ) {\n\tfloat alpha = pow2( roughness );\n\tvec3 halfDir = normalize( incidentLight.direction + geometry.viewDir );\n\tfloat dotNL = saturate( dot( geometry.normal, incidentLight.direction ) );\n\tfloat dotNV = saturate( dot( geometry.normal, geometry.viewDir ) );\n\tfloat dotNH = saturate( dot( geometry.normal, halfDir ) );\n\tfloat dotLH = saturate( dot( incidentLight.direction, halfDir ) );\n\tvec3 F = F_Schlick( specularColor, dotLH );\n\tfloat G = G_GGX_SmithCorrelated( alpha, dotNL, dotNV );\n\tfloat D = D_GGX( alpha, dotNH );\n\treturn F * ( G * D );\n}\nvec2 LTC_Uv( const in vec3 N, const in vec3 V, const in float roughness ) {\n\tconst float LUT_SIZE  = 64.0;\n\tconst float LUT_SCALE = ( LUT_SIZE - 1.0 ) / LUT_SIZE;\n\tconst float LUT_BIAS  = 0.5 / LUT_SIZE;\n\tfloat dotNV = saturate( dot( N, V ) );\n\tvec2 uv = vec2( roughness, sqrt( 1.0 - dotNV ) );\n\tuv = uv * LUT_SCALE + LUT_BIAS;\n\treturn uv;\n}\nfloat LTC_ClippedSphereFormFactor( const in vec3 f ) {\n\tfloat l = length( f );\n\treturn max( ( l * l + f.z ) / ( l + 1.0 ), 0.0 );\n}\nvec3 LTC_EdgeVectorFormFactor( const in vec3 v1, const in vec3 v2 ) {\n\tfloat x = dot( v1, v2 );\n\tfloat y = abs( x );\n\tfloat a = 0.8543985 + ( 0.4965155 + 0.0145206 * y ) * y;\n\tfloat b = 3.4175940 + ( 4.1616724 + y ) * y;\n\tfloat v = a / b;\n\tfloat theta_sintheta = ( x > 0.0 ) ? v : 0.5 * inversesqrt( max( 1.0 - x * x, 1e-7 ) ) - v;\n\treturn cross( v1, v2 ) * theta_sintheta;\n}\nvec3 LTC_Evaluate( const in vec3 N, const in vec3 V, const in vec3 P, const in mat3 mInv, const in vec3 rectCoords[ 4 ] ) {\n\tvec3 v1 = rectCoords[ 1 ] - rectCoords[ 0 ];\n\tvec3 v2 = rectCoords[ 3 ] - rectCoords[ 0 ];\n\tvec3 lightNormal = cross( v1, v2 );\n\tif( dot( lightNormal, P - rectCoords[ 0 ] ) < 0.0 ) return vec3( 0.0 );\n\tvec3 T1, T2;\n\tT1 = normalize( V - N * dot( V, N ) );\n\tT2 = - cross( N, T1 );\n\tmat3 mat = mInv * transposeMat3( mat3( T1, T2, N ) );\n\tvec3 coords[ 4 ];\n\tcoords[ 0 ] = mat * ( rectCoords[ 0 ] - P );\n\tcoords[ 1 ] = mat * ( rectCoords[ 1 ] - P );\n\tcoords[ 2 ] = mat * ( rectCoords[ 2 ] - P );\n\tcoords[ 3 ] = mat * ( rectCoords[ 3 ] - P );\n\tcoords[ 0 ] = normalize( coords[ 0 ] );\n\tcoords[ 1 ] = normalize( coords[ 1 ] );\n\tcoords[ 2 ] = normalize( coords[ 2 ] );\n\tcoords[ 3 ] = normalize( coords[ 3 ] );\n\tvec3 vectorFormFactor = vec3( 0.0 );\n\tvectorFormFactor += LTC_EdgeVectorFormFactor( coords[ 0 ], coords[ 1 ] );\n\tvectorFormFactor += LTC_EdgeVectorFormFactor( coords[ 1 ], coords[ 2 ] );\n\tvectorFormFactor += LTC_EdgeVectorFormFactor( coords[ 2 ], coords[ 3 ] );\n\tvectorFormFactor += LTC_EdgeVectorFormFactor( coords[ 3 ], coords[ 0 ] );\n\tfloat result = LTC_ClippedSphereFormFactor( vectorFormFactor );\n\treturn vec3( result );\n}\nvec3 BRDF_Specular_GGX_Environment( const in GeometricContext geometry, const in vec3 specularColor, const in float roughness ) {\n\tfloat dotNV = saturate( dot( geometry.normal, geometry.viewDir ) );\n\tconst vec4 c0 = vec4( - 1, - 0.0275, - 0.572, 0.022 );\n\tconst vec4 c1 = vec4( 1, 0.0425, 1.04, - 0.04 );\n\tvec4 r = roughness * c0 + c1;\n\tfloat a004 = min( r.x * r.x, exp2( - 9.28 * dotNV ) ) * r.x + r.y;\n\tvec2 AB = vec2( -1.04, 1.04 ) * a004 + r.zw;\n\treturn specularColor * AB.x + AB.y;\n}\nfloat G_BlinnPhong_Implicit( ) {\n\treturn 0.25;\n}\nfloat D_BlinnPhong( const in float shininess, const in float dotNH ) {\n\treturn RECIPROCAL_PI * ( shininess * 0.5 + 1.0 ) * pow( dotNH, shininess );\n}\nvec3 BRDF_Specular_BlinnPhong( const in IncidentLight incidentLight, const in GeometricContext geometry, const in vec3 specularColor, const in float shininess ) {\n\tvec3 halfDir = normalize( incidentLight.direction + geometry.viewDir );\n\tfloat dotNH = saturate( dot( geometry.normal, halfDir ) );\n\tfloat dotLH = saturate( dot( incidentLight.direction, halfDir ) );\n\tvec3 F = F_Schlick( specularColor, dotLH );\n\tfloat G = G_BlinnPhong_Implicit( );\n\tfloat D = D_BlinnPhong( shininess, dotNH );\n\treturn F * ( G * D );\n}\nfloat GGXRoughnessToBlinnExponent( const in float ggxRoughness ) {\n\treturn ( 2.0 / pow2( ggxRoughness + 0.0001 ) - 2.0 );\n}\nfloat BlinnExponentToGGXRoughness( const in float blinnExponent ) {\n\treturn sqrt( 2.0 / ( blinnExponent + 2.0 ) );\n}\n";
 
-	var bumpmap_pars_fragment = "#ifdef USE_BUMPMAP\n\tuniform sampler2D bumpMap;\n\tuniform float bumpScale;\n\tvec2 dHdxy_fwd() {\n\t\tvec2 dSTdx = dFdx( vUv );\n\t\tvec2 dSTdy = dFdy( vUv );\n\t\tfloat Hll = bumpScale * texture2D( bumpMap, vUv ).x;\n\t\tfloat dBx = bumpScale * texture2D( bumpMap, vUv + dSTdx ).x - Hll;\n\t\tfloat dBy = bumpScale * texture2D( bumpMap, vUv + dSTdy ).x - Hll;\n\t\treturn vec2( dBx, dBy );\n\t}\n\tvec3 perturbNormalArb( vec3 surf_pos, vec3 surf_norm, vec2 dHdxy ) {\n\t\tvec3 vSigmaX = vec3( dFdx( surf_pos.x ), dFdx( surf_pos.y ), dFdx( surf_pos.z ) );\n\t\tvec3 vSigmaY = vec3( dFdy( surf_pos.x ), dFdy( surf_pos.y ), dFdy( surf_pos.z ) );\n\t\tvec3 vN = surf_norm;\n\t\tvec3 R1 = cross( vSigmaY, vN );\n\t\tvec3 R2 = cross( vN, vSigmaX );\n\t\tfloat fDet = dot( vSigmaX, R1 );\n\t\tvec3 vGrad = sign( fDet ) * ( dHdxy.x * R1 + dHdxy.y * R2 );\n\t\treturn normalize( abs( fDet ) * surf_norm - vGrad );\n\t}\n#endif\n";
+	var bumpmap_pars_fragment = "#ifdef USE_BUMPMAP\n\tuniform sampler2D bumpMap;\n\tuniform float bumpScale;\n\tvec2 dHdxy_fwd() {\n\t\tvec2 dSTdx = dFdx( vUv );\n\t\tvec2 dSTdy = dFdy( vUv );\n\t\tfloat Hll = bumpScale * texture2D( bumpMap, vUv ).x;\n\t\tfloat dBx = bumpScale * texture2D( bumpMap, vUv + dSTdx ).x - Hll;\n\t\tfloat dBy = bumpScale * texture2D( bumpMap, vUv + dSTdy ).x - Hll;\n\t\treturn vec2( dBx, dBy );\n\t}\n\tvec3 perturbNormalArb( vec3 surf_pos, vec3 surf_norm, vec2 dHdxy ) {\n\t\tvec3 vSigmaX = vec3( dFdx( surf_pos.x ), dFdx( surf_pos.y ), dFdx( surf_pos.z ) );\n\t\tvec3 vSigmaY = vec3( dFdy( surf_pos.x ), dFdy( surf_pos.y ), dFdy( surf_pos.z ) );\n\t\tvec3 vN = surf_norm;\n\t\tvec3 R1 = cross( vSigmaY, vN );\n\t\tvec3 R2 = cross( vN, vSigmaX );\n\t\tfloat fDet = dot( vSigmaX, R1 );\n\t\tfDet *= ( float( gl_FrontFacing ) * 2.0 - 1.0 );\n\t\tvec3 vGrad = sign( fDet ) * ( dHdxy.x * R1 + dHdxy.y * R2 );\n\t\treturn normalize( abs( fDet ) * surf_norm - vGrad );\n\t}\n#endif\n";
 
 	var clipping_planes_fragment = "#if NUM_CLIPPING_PLANES > 0\n\tvec4 plane;\n\t#pragma unroll_loop\n\tfor ( int i = 0; i < UNION_CLIPPING_PLANES; i ++ ) {\n\t\tplane = clippingPlanes[ i ];\n\t\tif ( dot( vViewPosition, plane.xyz ) > plane.w ) discard;\n\t}\n\t#if UNION_CLIPPING_PLANES < NUM_CLIPPING_PLANES\n\t\tbool clipped = true;\n\t\t#pragma unroll_loop\n\t\tfor ( int i = UNION_CLIPPING_PLANES; i < NUM_CLIPPING_PLANES; i ++ ) {\n\t\t\tplane = clippingPlanes[ i ];\n\t\t\tclipped = ( dot( vViewPosition, plane.xyz ) > plane.w ) && clipped;\n\t\t}\n\t\tif ( clipped ) discard;\n\t#endif\n#endif\n";
 
@@ -6028,7 +6028,7 @@
 
 	var normal_fragment_maps = "#ifdef USE_NORMALMAP\n\tnormal = perturbNormal2Arb( -vViewPosition, normal );\n#elif defined( USE_BUMPMAP )\n\tnormal = perturbNormalArb( -vViewPosition, normal, dHdxy_fwd() );\n#endif\n";
 
-	var normalmap_pars_fragment = "#ifdef USE_NORMALMAP\n\tuniform sampler2D normalMap;\n\tuniform vec2 normalScale;\n\tvec3 perturbNormal2Arb( vec3 eye_pos, vec3 surf_norm ) {\n\t\tvec3 q0 = vec3( dFdx( eye_pos.x ), dFdx( eye_pos.y ), dFdx( eye_pos.z ) );\n\t\tvec3 q1 = vec3( dFdy( eye_pos.x ), dFdy( eye_pos.y ), dFdy( eye_pos.z ) );\n\t\tvec2 st0 = dFdx( vUv.st );\n\t\tvec2 st1 = dFdy( vUv.st );\n\t\tfloat scale = sign( st1.t * st0.s - st0.t * st1.s );\t\tscale *= float( gl_FrontFacing ) * 2.0 - 1.0;\n\t\tvec3 S = normalize( ( q0 * st1.t - q1 * st0.t ) * scale );\n\t\tvec3 T = normalize( ( - q0 * st1.s + q1 * st0.s ) * scale );\n\t\tvec3 N = normalize( surf_norm );\n\t\tvec3 mapN = texture2D( normalMap, vUv ).xyz * 2.0 - 1.0;\n\t\tmapN.xy = normalScale * mapN.xy;\n\t\tmat3 tsn = mat3( S, T, N );\n\t\treturn normalize( tsn * mapN );\n\t}\n#endif\n";
+	var normalmap_pars_fragment = "#ifdef USE_NORMALMAP\n\tuniform sampler2D normalMap;\n\tuniform vec2 normalScale;\n\tvec3 perturbNormal2Arb( vec3 eye_pos, vec3 surf_norm ) {\n\t\tvec3 q0 = vec3( dFdx( eye_pos.x ), dFdx( eye_pos.y ), dFdx( eye_pos.z ) );\n\t\tvec3 q1 = vec3( dFdy( eye_pos.x ), dFdy( eye_pos.y ), dFdy( eye_pos.z ) );\n\t\tvec2 st0 = dFdx( vUv.st );\n\t\tvec2 st1 = dFdy( vUv.st );\n\t\tfloat scale = sign( st1.t * st0.s - st0.t * st1.s );\n\t\tvec3 S = normalize( ( q0 * st1.t - q1 * st0.t ) * scale );\n\t\tvec3 T = normalize( ( - q0 * st1.s + q1 * st0.s ) * scale );\n\t\tvec3 N = normalize( surf_norm );\n\t\tmat3 tsn = mat3( S, T, N );\n\t\tvec3 mapN = texture2D( normalMap, vUv ).xyz * 2.0 - 1.0;\n\t\tmapN.xy *= normalScale;\n\t\tmapN.xy *= ( float( gl_FrontFacing ) * 2.0 - 1.0 );\n\t\treturn normalize( tsn * mapN );\n\t}\n#endif\n";
 
 	var packing = "vec3 packNormalToRGB( const in vec3 normal ) {\n\treturn normalize( normal ) * 0.5 + 0.5;\n}\nvec3 unpackRGBToNormal( const in vec3 rgb ) {\n\treturn 2.0 * rgb.xyz - 1.0;\n}\nconst float PackUpscale = 256. / 255.;const float UnpackDownscale = 255. / 256.;\nconst vec3 PackFactors = vec3( 256. * 256. * 256., 256. * 256.,  256. );\nconst vec4 UnpackFactors = UnpackDownscale / vec4( PackFactors, 1. );\nconst float ShiftRight8 = 1. / 256.;\nvec4 packDepthToRGBA( const in float v ) {\n\tvec4 r = vec4( fract( v * PackFactors ), v );\n\tr.yzw -= r.xyz * ShiftRight8;\treturn r * PackUpscale;\n}\nfloat unpackRGBAToDepth( const in vec4 v ) {\n\treturn dot( v, UnpackFactors );\n}\nfloat viewZToOrthographicDepth( const in float viewZ, const in float near, const in float far ) {\n\treturn ( viewZ + near ) / ( near - far );\n}\nfloat orthographicDepthToViewZ( const in float linearClipZ, const in float near, const in float far ) {\n\treturn linearClipZ * ( near - far ) - near;\n}\nfloat viewZToPerspectiveDepth( const in float viewZ, const in float near, const in float far ) {\n\treturn (( near + viewZ ) * far ) / (( far - near ) * viewZ );\n}\nfloat perspectiveDepthToViewZ( const in float invClipZ, const in float near, const in float far ) {\n\treturn ( near * far ) / ( ( far - near ) * invClipZ - far );\n}\n";
 
@@ -6625,23 +6625,17 @@
 
 		},
 
-		convertGammaToLinear: function () {
+		convertGammaToLinear: function ( gammaFactor ) {
 
-			var r = this.r, g = this.g, b = this.b;
-
-			this.r = r * r;
-			this.g = g * g;
-			this.b = b * b;
+			this.copyGammaToLinear( this, gammaFactor );
 
 			return this;
 
 		},
 
-		convertLinearToGamma: function () {
+		convertLinearToGamma: function ( gammaFactor ) {
 
-			this.r = Math.sqrt( this.r );
-			this.g = Math.sqrt( this.g );
-			this.b = Math.sqrt( this.b );
+			this.copyLinearToGamma( this, gammaFactor );
 
 			return this;
 
@@ -12631,18 +12625,28 @@
 			if ( this.map && this.map.isTexture ) data.map = this.map.toJSON( meta ).uuid;
 			if ( this.alphaMap && this.alphaMap.isTexture ) data.alphaMap = this.alphaMap.toJSON( meta ).uuid;
 			if ( this.lightMap && this.lightMap.isTexture ) data.lightMap = this.lightMap.toJSON( meta ).uuid;
+
+			if ( this.aoMap && this.aoMap.isTexture ) {
+
+				data.aoMap = this.aoMap.toJSON( meta ).uuid;
+				data.aoMapIntensity = this.aoMapIntensity;
+
+			}
+
 			if ( this.bumpMap && this.bumpMap.isTexture ) {
 
 				data.bumpMap = this.bumpMap.toJSON( meta ).uuid;
 				data.bumpScale = this.bumpScale;
 
 			}
+
 			if ( this.normalMap && this.normalMap.isTexture ) {
 
 				data.normalMap = this.normalMap.toJSON( meta ).uuid;
 				data.normalScale = this.normalScale.toArray();
 
 			}
+
 			if ( this.displacementMap && this.displacementMap.isTexture ) {
 
 				data.displacementMap = this.displacementMap.toJSON( meta ).uuid;
@@ -12650,6 +12654,7 @@
 				data.displacementBias = this.displacementBias;
 
 			}
+
 			if ( this.roughnessMap && this.roughnessMap.isTexture ) data.roughnessMap = this.roughnessMap.toJSON( meta ).uuid;
 			if ( this.metalnessMap && this.metalnessMap.isTexture ) data.metalnessMap = this.metalnessMap.toJSON( meta ).uuid;
 
@@ -14237,7 +14242,6 @@
 					Triangle.getNormal( vA, vB, vC, face.normal );
 
 					intersection.face = face;
-					intersection.faceIndex = a;
 
 				}
 
@@ -14299,7 +14303,7 @@
 
 							if ( intersection ) {
 
-								intersection.faceIndex = Math.floor( i / 3 ); // triangle number in indices buffer semantics
+								intersection.faceIndex = Math.floor( i / 3 ); // triangle number in indexed buffer semantics
 								intersects.push( intersection );
 
 							}
@@ -14318,7 +14322,12 @@
 
 							intersection = checkBufferGeometryIntersection( this, raycaster, ray, position, uv, a, b, c );
 
-							if ( intersection ) intersects.push( intersection );
+							if ( intersection ) {
+
+								intersection.faceIndex = Math.floor( i / 3 ); // triangle number in non-indexed buffer semantics
+								intersects.push( intersection );
+
+							}
 
 						}
 
@@ -14421,7 +14430,7 @@
 	 * @author mrdoob / http://mrdoob.com/
 	 */
 
-	function WebGLBackground( renderer, state, geometries, premultipliedAlpha ) {
+	function WebGLBackground( renderer, state, objects, premultipliedAlpha ) {
 
 		var clearColor = new Color( 0x000000 );
 		var clearAlpha = 0;
@@ -14476,7 +14485,7 @@
 
 					};
 
-					geometries.update( boxMesh.geometry );
+					objects.update( boxMesh );
 
 				}
 
@@ -14495,7 +14504,7 @@
 						new MeshBasicMaterial( { depthTest: false, depthWrite: false, fog: false } )
 					);
 
-					geometries.update( planeMesh.geometry );
+					objects.update( planeMesh );
 
 				}
 
@@ -14579,19 +14588,7 @@
 
 			}
 
-			var position = geometry.attributes.position;
-
-			if ( position.isInterleavedBufferAttribute ) {
-
-				count = position.data.count;
-
-				extension.drawArraysInstancedANGLE( mode, 0, count, geometry.maxInstancedCount );
-
-			} else {
-
-				extension.drawArraysInstancedANGLE( mode, start, count, geometry.maxInstancedCount );
-
-			}
+			extension.drawArraysInstancedANGLE( mode, start, count, geometry.maxInstancedCount );
 
 			info.update( count, mode, geometry.maxInstancedCount );
 
@@ -18300,6 +18297,7 @@
 
 	CanvasTexture.prototype = Object.create( Texture.prototype );
 	CanvasTexture.prototype.constructor = CanvasTexture;
+	CanvasTexture.prototype.isCanvasTexture = true;
 
 	/**
 	 * @author mikael emtinger / http://gomo.se/
@@ -21381,7 +21379,7 @@
 			renderLists = new WebGLRenderLists();
 			renderStates = new WebGLRenderStates();
 
-			background = new WebGLBackground( _this, state, geometries, _premultipliedAlpha );
+			background = new WebGLBackground( _this, state, objects, _premultipliedAlpha );
 
 			bufferRenderer = new WebGLBufferRenderer( _gl, extensions, info );
 			indexedBufferRenderer = new WebGLIndexedBufferRenderer( _gl, extensions, info );
@@ -23257,6 +23255,7 @@
 
 				uniforms.bumpMap.value = material.bumpMap;
 				uniforms.bumpScale.value = material.bumpScale;
+				if ( material.side === BackSide ) uniforms.bumpScale.value *= - 1;
 
 			}
 
@@ -23264,6 +23263,7 @@
 
 				uniforms.normalMap.value = material.normalMap;
 				uniforms.normalScale.value.copy( material.normalScale );
+				if ( material.side === BackSide ) uniforms.normalScale.value.negate();
 
 			}
 
@@ -23316,6 +23316,7 @@
 
 				uniforms.bumpMap.value = material.bumpMap;
 				uniforms.bumpScale.value = material.bumpScale;
+				if ( material.side === BackSide ) uniforms.bumpScale.value *= - 1;
 
 			}
 
@@ -23323,6 +23324,7 @@
 
 				uniforms.normalMap.value = material.normalMap;
 				uniforms.normalScale.value.copy( material.normalScale );
+				if ( material.side === BackSide ) uniforms.normalScale.value.negate();
 
 			}
 
@@ -23386,6 +23388,7 @@
 
 				uniforms.bumpMap.value = material.bumpMap;
 				uniforms.bumpScale.value = material.bumpScale;
+				if ( material.side === BackSide ) uniforms.bumpScale.value *= - 1;
 
 			}
 
@@ -23393,6 +23396,7 @@
 
 				uniforms.normalMap.value = material.normalMap;
 				uniforms.normalScale.value.copy( material.normalScale );
+				if ( material.side === BackSide ) uniforms.normalScale.value.negate();
 
 			}
 
@@ -23687,11 +23691,18 @@
 			var height = srcTexture.image.height;
 			var glFormat = utils.convert( dstTexture.format );
 			var glType = utils.convert( dstTexture.type );
-			var pixels = srcTexture.isDataTexture ? srcTexture.image.data : srcTexture.image;
 
 			this.setTexture2D( dstTexture, 0 );
 
-			_gl.texSubImage2D( _gl.TEXTURE_2D, level || 0, position.x, position.y, width, height, glFormat, glType, pixels );
+			if ( srcTexture.isDataTexture ) {
+
+				_gl.texSubImage2D( _gl.TEXTURE_2D, level || 0, position.x, position.y, width, height, glFormat, glType, srcTexture.image.data );
+
+			} else {
+
+				_gl.texSubImage2D( _gl.TEXTURE_2D, level || 0, position.x, position.y, glFormat, glType, srcTexture.image );
+
+			}
 
 		};
 
@@ -23715,7 +23726,7 @@
 
 	FogExp2.prototype.clone = function () {
 
-		return new FogExp2( this.color.getHex(), this.density );
+		return new FogExp2( this.color, this.density );
 
 	};
 
@@ -23749,7 +23760,7 @@
 
 	Fog.prototype.clone = function () {
 
-		return new Fog( this.color.getHex(), this.near, this.far );
+		return new Fog( this.color, this.near, this.far );
 
 	};
 
@@ -27556,7 +27567,7 @@
 	 *
 	 *  curveSegments: <int>, // number of points on the curves
 	 *  steps: <int>, // number of points for z-side extrusions / used for subdividing segments of extrude spline too
-	 *  amount: <int>, // Depth to extrude the shape
+	 *  depth: <float>, // Depth to extrude the shape
 	 *
 	 *  bevelEnabled: <bool>, // turn on bevel
 	 *  bevelThickness: <float>, // how deep into the original shape bevel goes
@@ -27614,7 +27625,7 @@
 		for ( var i = 0, l = shapes.length; i < l; i ++ ) {
 
 			var shape = shapes[ i ];
-			addShape( shape, options );
+			addShape( shape );
 
 		}
 
@@ -27635,7 +27646,7 @@
 
 			var curveSegments = options.curveSegments !== undefined ? options.curveSegments : 12;
 			var steps = options.steps !== undefined ? options.steps : 1;
-			var amount = options.amount !== undefined ? options.amount : 100;
+			var depth = options.depth !== undefined ? options.depth : 100;
 
 			var bevelEnabled = options.bevelEnabled !== undefined ? options.bevelEnabled : true;
 			var bevelThickness = options.bevelThickness !== undefined ? options.bevelThickness : 6;
@@ -27645,6 +27656,15 @@
 			var extrudePath = options.extrudePath;
 
 			var uvgen = options.UVGenerator !== undefined ? options.UVGenerator : WorldUVGenerator;
+
+			// deprecated options
+
+			if ( options.amount !== undefined ) {
+
+				console.warn( 'THREE.ExtrudeBufferGeometry: amount has been renamed to depth.' );
+				depth = options.amount;
+
+			}
 
 			//
 
@@ -27986,7 +28006,7 @@
 
 					if ( ! extrudeByPath ) {
 
-						v( vert.x, vert.y, amount / steps * s );
+						v( vert.x, vert.y, depth / steps * s );
 
 					} else {
 
@@ -28020,7 +28040,7 @@
 				for ( i = 0, il = contour.length; i < il; i ++ ) {
 
 					vert = scalePt2( contour[ i ], contourMovements[ i ], bs );
-					v( vert.x, vert.y, amount + z );
+					v( vert.x, vert.y, depth + z );
 
 				}
 
@@ -28037,7 +28057,7 @@
 
 						if ( ! extrudeByPath ) {
 
-							v( vert.x, vert.y, amount + z );
+							v( vert.x, vert.y, depth + z );
 
 						} else {
 
@@ -28366,7 +28386,7 @@
 
 		// translate parameters to ExtrudeGeometry API
 
-		parameters.amount = parameters.height !== undefined ? parameters.height : 50;
+		parameters.depth = parameters.height !== undefined ? parameters.height : 50;
 
 		// defaults
 
@@ -36739,12 +36759,14 @@
 		setTexturePath: function ( value ) {
 
 			this.texturePath = value;
+			return this;
 
 		},
 
 		setCrossOrigin: function ( value ) {
 
 			this.crossOrigin = value;
+			return this;
 
 		},
 
@@ -43911,6 +43933,8 @@
 		if ( Math.abs( scale ) < 1e-8 ) scale = 1e-8; // sign does not matter
 
 		this.scale.set( 0.5 * this.size, 0.5 * this.size, scale );
+
+		this.children[ 0 ].material.side = ( scale < 0 ) ? BackSide : FrontSide; // renderer flips side when determinant < 0; flipping not wanted here
 
 		this.lookAt( this.plane.normal );
 
